@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Barlow Condensed', 'Plus Jakarta Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --color-brand-accent: #e04f26;
+  --color-brand-dark: #08090c;
+  --color-brand-surface: #101217;
+  --color-brand-border: #1e222b;
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+  background-color: #08090c;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #08090c;
+  color: #f5f5f3;
+}
+
+/* Tabular numbers for technical specifications, tolerances, and stage counters */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Subtle studio floor vignette */
+.studio-vignette {
+  background: radial-gradient(
+    ellipse 80% 60% at 50% 48%,
+    rgba(26, 30, 40, 0.38) 0%,
+    rgba(11, 13, 18, 0.85) 62%,
+    #08090c 100%
+  );
+}
+
+/* Custom minimal scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #08090c;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #232732;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #e04f26;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
