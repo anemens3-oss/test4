@@ -685,7 +685,7 @@ export function createEngineAssembly(): EngineAssemblyInstance {
   const dummy = new THREE.Object3D();
 
   // ============================================================================
-  // 5. DETERMINISTIC SCROLL CHOREOGRAPHY UPDATE (FORWARD & REVERSE)
+  // 5. DETERMINISTIC SCROLL CHOREOGRAPHY UPDATE (FAST TRAILER PACE)
   // ============================================================================
   const updateState = (
     scrollProgress: number,
@@ -695,54 +695,60 @@ export function createEngineAssembly(): EngineAssemblyInstance {
   ) => {
     const p = Math.max(0, Math.min(1, scrollProgress));
 
-    // Show grille louvers ONLY when camera is approaching/passing the grille (0.20 -> 0.90)
-    grillePortalGroup.visible = p >= 0.20 && p <= 0.90;
+    // Show grille louvers only during the fast grille approach & exit (0.16 -> 0.90)
+    grillePortalGroup.visible = p >= 0.16 && p <= 0.90;
 
-    // Show and illuminate engine assembly from approach through exit (0.18 -> 0.92)
+    // Illuminate engine bay immediately as camera enters grille (0.18 -> 0.90)
     const bayLightEnvelope =
-      smoothstep(0.22, 0.34, p) * (1 - smoothstep(0.84, 0.92, p));
+      smoothstep(0.18, 0.27, p) * (1 - smoothstep(0.81, 0.89, p));
 
-    // Priority 4, 5 & 6 Timeline Mapping:
-    // - 0.35 -> 0.44: Camera inside engine bay; vibration starts and intensifies
-    // - 0.44 -> 0.68: Engine disassembles into recognizable components (Crankshaft, Pistons, Rods, Block, Heads, Covers, Blower, Pulleys, Belt)
-    // - 0.68 -> 0.84: Reverse scroll / continuation reassembles components back to 0.000 tolerance
-    const explodeUp = smoothstep(0.43, 0.66, p);
-    const reassembleDown = smoothstep(0.69, 0.84, p);
+    // Accelerated Engine Timeline (Desktop & even faster Mobile thresholds):
+    // - 0.28 -> 0.36: Short, punchy escalating vibration right as camera arrives
+    // - 0.34 -> 0.56 (Mobile 0.31 -> 0.52): Energetic disassembly into Crankshaft, Pistons, Rods, Block, Heads, Covers, Blower, Pulleys
+    // - 0.62 -> 0.78 (Mobile 0.58 -> 0.75): Rapid precision reassembly without hanging in mid-air
+    const expStart = isMobile ? 0.31 : 0.34;
+    const expPeak = isMobile ? 0.52 : 0.56;
+    const reassembleStart = isMobile ? 0.58 : 0.62;
+    const reassembleEnd = isMobile ? 0.75 : 0.78;
+
+    const explodeUp = smoothstep(expStart, expPeak, p);
+    const reassembleDown = smoothstep(reassembleStart, reassembleEnd, p);
     const explosionFactor = Math.max(0, explodeUp - reassembleDown);
 
-    // Escalating mechanical vibration in 0.35 -> 0.46 before parts separate
-    const vibRampUp = smoothstep(0.35, 0.44, p);
-    const vibFadeOut = 1 - smoothstep(0.44, 0.50, p);
+    // Short, intense mechanical vibration right before and during initial separation (0.27 -> 0.39)
+    const vibRampUp = smoothstep(0.27, 0.34, p);
+    const vibFadeOut = 1 - smoothstep(0.35, 0.41, p);
     const tremorIntensity = !reducedMotion ? vibRampUp * vibFadeOut : 0;
 
-    engineCoreLight.intensity = bayLightEnvelope * (2.8 + explosionFactor * 3.6);
-    engineTopLight.intensity = bayLightEnvelope * 3.8;
+    engineCoreLight.intensity = bayLightEnvelope * (2.9 + explosionFactor * 3.8);
+    engineTopLight.intensity = bayLightEnvelope * 3.9;
 
-    // Pulleys spin synchronously with engine RPM, slowing as parts separate
-    const pulleySpinRate = reducedMotion ? 0.5 : 8.0 * (1 - explosionFactor * 0.85);
-    const spinAngle = elapsedTime * pulleySpinRate + p * 22.0;
+    // High-energy pulley rotation
+    const pulleySpinRate = reducedMotion ? 0.5 : 10.5 * (1 - explosionFactor * 0.8);
+    const spinAngle = elapsedTime * pulleySpinRate + p * 26.0;
 
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
+      // Tight stagger window so all components burst out energetically without lagging
       const localExp = smoothstep(
-        part.stagger * 0.45,
-        1.0 - (0.24 - part.stagger) * 0.35,
+        part.stagger * 0.25,
+        1.0 - (0.24 - part.stagger) * 0.2,
         explosionFactor
       );
 
       const floatWave =
         !reducedMotion && localExp > 0.05
-          ? Math.sin(elapsedTime * 2.0 + i * 0.8) * 0.009 * localExp
+          ? Math.sin(elapsedTime * 2.6 + i * 0.8) * 0.007 * localExp
           : 0;
 
-      // High-frequency mechanical harmonic vibration
+      // Crisp high-frequency mechanical vibration
       const vibX =
         tremorIntensity > 0
-          ? Math.sin(elapsedTime * 68 + i * 1.9) * 0.0045 * tremorIntensity
+          ? Math.sin(elapsedTime * 78 + i * 1.9) * 0.0055 * tremorIntensity
           : 0;
       const vibY =
         tremorIntensity > 0
-          ? Math.cos(elapsedTime * 74 + i * 2.3) * 0.0045 * tremorIntensity
+          ? Math.cos(elapsedTime * 84 + i * 2.3) * 0.0055 * tremorIntensity
           : 0;
 
       part.mesh.position.set(
@@ -763,23 +769,24 @@ export function createEngineAssembly(): EngineAssemblyInstance {
       item.mesh.rotation.z += spinAngle * item.speedRatio;
     }
 
-    // Subtle secondary fragments (halved count on mobile for performance & clarity)
-    const activeShardCount = isMobile ? 70 : MAX_SHARDS;
+    // Reduced secondary fragments on mobile (55 vs 130) with zero lingering after reassembly
+    const activeShardCount = isMobile ? 55 : 130;
     shardInstanced.count = activeShardCount;
     const shardVisibility =
-      smoothstep(0.44, 0.50, p) * (1 - smoothstep(0.79, 0.84, p));
+      smoothstep(expStart + 0.02, expStart + 0.08, p) *
+      (1 - smoothstep(reassembleEnd - 0.05, reassembleEnd, p));
     shardInstanced.visible = shardVisibility > 0.01;
 
     if (shardInstanced.visible) {
-      shardMat.emissiveIntensity = 1.3 + shardVisibility * 2.0;
+      shardMat.emissiveIntensity = 1.4 + shardVisibility * 2.0;
       for (let i = 0; i < activeShardCount; i++) {
         const s = shardData[i];
         const pos = dummy.position;
         pos.lerpVectors(s.origin, s.target, explosionFactor);
         dummy.rotation.set(
-          elapsedTime * s.rotSpeed.x * 0.4 + explosionFactor * 2.5,
-          elapsedTime * s.rotSpeed.y * 0.4 + explosionFactor * 2.5,
-          elapsedTime * s.rotSpeed.z * 0.4
+          elapsedTime * s.rotSpeed.x * 0.45 + explosionFactor * 2.8,
+          elapsedTime * s.rotSpeed.y * 0.45 + explosionFactor * 2.8,
+          elapsedTime * s.rotSpeed.z * 0.45
         );
         const currentScale = s.scale * shardVisibility * (0.35 + 0.65 * explosionFactor);
         dummy.scale.setScalar(currentScale);
