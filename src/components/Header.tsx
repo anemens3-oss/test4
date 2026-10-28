@@ -4,12 +4,27 @@ import { Menu, X, Phone } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isHiddenDuringCinema, setIsHiddenDuringCinema] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 32);
+      const y = window.scrollY;
+      setIsScrolled(y > 32);
+
+      // Hide top header during the active 3D road & engine scroll sequence
+      // so the white road scene has zero UI clutter, then restore it once reaching #expertise
+      const heroEl = document.getElementById('hero');
+      if (heroEl) {
+        const heroHeight = heroEl.offsetHeight - window.innerHeight;
+        const inActiveCinema = y > 48 && y < heroHeight - 80;
+        setIsHiddenDuringCinema(inActiveCinema);
+      } else {
+        setIsHiddenDuringCinema(false);
+      }
     };
+
+    handleScroll();
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
@@ -24,7 +39,11 @@ export const Header: React.FC = () => {
   return (
     <>
       <header
-        className={`fixed top-0 left-0 right-0 z-50 transition-colors duration-300 border-b ${
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 border-b ${
+          isHiddenDuringCinema && !mobileMenuOpen
+            ? 'opacity-0 -translate-y-3 pointer-events-none'
+            : 'opacity-100 translate-y-0'
+        } ${
           isScrolled
             ? 'bg-[#08090c]/92 border-[#1e222b] py-3'
             : 'bg-transparent border-transparent py-4 sm:py-5'

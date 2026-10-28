@@ -14,11 +14,6 @@ export interface PaintPreset {
   clearcoat: number;
 }
 
-/**
- * Calibrated automotive basecoat + clearcoat presets.
- * Lowering metalness to 0.34–0.48 preserves rich diffuse pigment saturation
- * while clearcoat: 1.0 delivers crisp studio reflections along the Challenger body lines.
- */
 export const PAINT_PRESETS: PaintPreset[] = [
   {
     id: 'crimson',
@@ -53,7 +48,12 @@ export interface CarModelInstance {
   rootGroup: THREE.Group;
   isExternalModel: boolean;
   setPaintPreset: (presetId: PaintPresetId) => void;
-  updateScrollState: (progress: number, elapsedTime: number, reducedMotion: boolean) => number;
+  updateScrollState: (
+    progress: number,
+    elapsedTime: number,
+    reducedMotion: boolean,
+    isMobile: boolean
+  ) => number;
   dispose: () => void;
 }
 
@@ -62,7 +62,7 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
-// Module-level cache so the GLB is only fetched and parsed once per session
+// Module-level cache so the GLB is only fetched and parsed once per session (never reloaded on resize)
 let cachedGltfScene: THREE.Group | null = null;
 let loadingPromise: Promise<THREE.Group> | null = null;
 
@@ -79,7 +79,7 @@ function fetchChallengerGlb(
   }
 
   const loader = new GLTFLoader();
-  // Relative URL works both at root (/) and on GitHub Pages subfolder (/service4/)
+  // Relative URL works both at root (/) and on GitHub Pages subfolder (/test4/)
   const modelUrl = './models/dodge_challenger.glb';
 
   loadingPromise = new Promise<THREE.Group>((resolve, reject) => {
@@ -117,7 +117,7 @@ interface WheelRigItem {
 
 /**
  * Sets up real 3D wheel spin groups around each wheel's true axle center
- * so all 4 wheels rotate in exact sync with the vehicle's forward motion in Scene 02.
+ * so all 4 wheels rotate in exact sync with the vehicle's forward motion along the road.
  */
 function setupWheelKinematics(gltfScene: THREE.Object3D): WheelRigItem[] {
   const wheelRigs: WheelRigItem[] = [];
@@ -133,8 +133,6 @@ function setupWheelKinematics(gltfScene: THREE.Object3D): WheelRigItem[] {
     const spinGroup = new THREE.Group();
     spinGroup.name = `${wName}_spinAxle`;
 
-    // Move mesh children (tire, rim, brake disc) into spinGroup so rotating spinGroup.rotation.x
-    // spins the wheel cleanly around its local X axle without disturbing steering orientation.
     const childrenToMove = [...wheelNode.children];
     childrenToMove.forEach((ch) => {
       spinGroup.add(ch);
@@ -142,8 +140,7 @@ function setupWheelKinematics(gltfScene: THREE.Object3D): WheelRigItem[] {
     wheelNode.add(spinGroup);
 
     const initialQuat = wheelNode.quaternion.clone();
-    // In the source GLTF, front wheels have an ~18 deg show-turn around world Y.
-    // Counter-rotating around Y aligns them straight ahead when driving in Scene 02.
+    // Counter-rotate the initial ~18 deg show steering angle so front wheels roll straight along the road
     const straightenYaw = new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(0, 1, 0),
       -0.312
@@ -163,14 +160,10 @@ function setupWheelKinematics(gltfScene: THREE.Object3D): WheelRigItem[] {
   return wheelRigs;
 }
 
-/**
- * Applies calibrated studio PBR materials to the loaded Dodge Challenger GLTF meshes
- * while preserving original UV-mapped tire and grille textures.
- */
 function upgradeChallengerMaterials(root: THREE.Object3D): {
   bodyMaterial: THREE.MeshPhysicalMaterial;
   grillMaterials: THREE.MeshStandardMaterial[];
-  shellFadeMaterials: THREE.Material[];
+  exteriorShellMeshes: THREE.Mesh[];
   haloOuterMat: THREE.MeshStandardMaterial;
   haloInnerMat: THREE.MeshStandardMaterial;
   tailLightMat: THREE.MeshStandardMaterial;
@@ -178,7 +171,7 @@ function upgradeChallengerMaterials(root: THREE.Object3D): {
 } {
   const disposableMaterials: THREE.Material[] = [];
   const grillMaterials: THREE.MeshStandardMaterial[] = [];
-  const shellFadeMaterials: THREE.Material[] = [];
+  const exteriorShellMeshes: THREE.Mesh[] = [];
 
   const defaultPreset = PAINT_PRESETS[0];
 
@@ -281,8 +274,6 @@ function upgradeChallengerMaterials(root: THREE.Object3D): {
     roughness: 0.82,
   });
 
-  shellFadeMaterials.push(bodyMaterial, satinTrimMaterial, interiorMaterial);
-
   disposableMaterials.push(
     bodyMaterial,
     glassMaterial,
@@ -303,69 +294,47 @@ function upgradeChallengerMaterials(root: THREE.Object3D): {
 
     child.castShadow = true;
     child.receiveShadow = true;
+    exteriorShellMeshes.push(child);
 
     const origMat = child.material as THREE.MeshStandardMaterial | undefined;
     const matName = origMat?.name || '';
 
     switch (matName) {
       case 'Material.011':
-        // Main Challenger Body Shell — ONLY this material changes color in paint switcher
         child.material = bodyMaterial;
         break;
-
       case 'Material.014':
-        // Windshield & Cabin Glass
         child.material = glassMaterial;
         break;
-
       case 'material':
-        // Forged Multi-spoke Alloy Rims
         child.material = rimMaterial;
         break;
-
       case 'Material.003':
-        // Slotted Brake Discs
         child.material = rotorMaterial;
         break;
-
       case 'Material.010':
-        // Brembo 6-Piston Brake Calipers
         child.material = caliperMaterial;
         break;
-
       case 'Material.021':
-        // Outer Quad Halo LED Rings
         child.material = haloOuterMat;
         break;
-
       case 'Material.020':
-        // Inner Amber Air-Catcher DRL Rings
         child.material = haloInnerMat;
         break;
-
       case 'Material.015':
       case 'Material.004':
-        // Rear Racetrack LED Tail Lamp Bar
         child.material = tailLightMat;
         break;
-
       case 'Material.005':
-        // Twin Exhaust Tips
         child.material = exhaustMaterial;
         break;
-
       case 'Material.017':
-        // Side Mirror Reflective Glass
         child.material = mirrorLensMaterial;
         break;
-
       case 'Material.013':
-        // Interior Cabin
         child.material = interiorMaterial;
         break;
-
       case 'Material.009':
-        // Tire Rubber (preserve original tread normal & albedo textures)
         if (origMat) {
           const tireMat = origMat.clone();
           tireMat.roughness = 0.82;
@@ -378,9 +347,7 @@ function upgradeChallengerMaterials(root: THREE.Object3D): {
           disposableMaterials.push(tireMat);
         }
         break;
-
       case 'grills':
-        // Front Split Grille & Intake Mesh (preserve original normal & baseColor textures)
         if (origMat) {
           const grillMat = origMat.clone();
           grillMat.metalness = 0.58;
@@ -391,9 +358,7 @@ function upgradeChallengerMaterials(root: THREE.Object3D): {
           disposableMaterials.push(grillMat);
         }
         break;
-
       default:
-        // Front Chin Splitter, Rear Diffuser, Side Skirts, Window Trim, Headlight Bezels
         child.material = satinTrimMaterial;
         break;
     }
@@ -402,7 +367,7 @@ function upgradeChallengerMaterials(root: THREE.Object3D): {
   return {
     bodyMaterial,
     grillMaterials,
-    shellFadeMaterials,
+    exteriorShellMeshes,
     haloOuterMat,
     haloInnerMat,
     tailLightMat,
@@ -410,12 +375,10 @@ function upgradeChallengerMaterials(root: THREE.Object3D): {
   };
 }
 
-/**
- * Fallback Challenger silhouette constructed only if GLB network loading fails.
- */
 function createFallbackChallenger(): {
   group: THREE.Group;
   bodyMaterial: THREE.MeshPhysicalMaterial;
+  exteriorShellMeshes: THREE.Mesh[];
   haloOuterMat: THREE.MeshStandardMaterial;
   haloInnerMat: THREE.MeshStandardMaterial;
   tailLightMat: THREE.MeshStandardMaterial;
@@ -423,6 +386,7 @@ function createFallbackChallenger(): {
 } {
   const group = new THREE.Group();
   group.name = 'FallbackChallenger';
+  const exteriorShellMeshes: THREE.Mesh[] = [];
 
   const defaultPreset = PAINT_PRESETS[0];
   const bodyMaterial = new THREE.MeshPhysicalMaterial({
@@ -466,43 +430,25 @@ function createFallbackChallenger(): {
     emissiveIntensity: 2.8,
   });
 
-  const hullGeo = new THREE.BoxGeometry(1.98, 0.56, 4.92);
-  const hull = new THREE.Mesh(hullGeo, bodyMaterial);
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(1.98, 0.56, 4.92), bodyMaterial);
   hull.position.set(0, 0.58, 0);
-  hull.castShadow = true;
   group.add(hull);
+  exteriorShellMeshes.push(hull);
 
-  const cabinGeo = new THREE.BoxGeometry(1.62, 0.42, 2.35);
-  const cabin = new THREE.Mesh(cabinGeo, glassMat);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.42, 2.35), glassMat);
   cabin.position.set(0, 1.04, -0.22);
   group.add(cabin);
+  exteriorShellMeshes.push(cabin);
 
-  const hoodBulgeGeo = new THREE.BoxGeometry(1.18, 0.09, 1.55);
-  const hoodBulge = new THREE.Mesh(hoodBulgeGeo, trimMat);
-  hoodBulge.position.set(0, 0.89, 1.35);
-  group.add(hoodBulge);
-
-  const splitterGeo = new THREE.BoxGeometry(2.02, 0.06, 0.28);
-  const splitter = new THREE.Mesh(splitterGeo, trimMat);
+  const splitter = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.06, 0.28), trimMat);
   splitter.position.set(0, 0.26, 2.42);
   group.add(splitter);
-
-  [-0.72, -0.52, 0.52, 0.72].forEach((x, idx) => {
-    const ringGeo = new THREE.TorusGeometry(0.065, 0.014, 12, 24);
-    const mat = idx === 1 || idx === 2 ? haloInnerMat : haloOuterMat;
-    const ring = new THREE.Mesh(ringGeo, mat);
-    ring.position.set(x, 0.62, 2.47);
-    group.add(ring);
-  });
-
-  const tailGeo = new THREE.BoxGeometry(1.76, 0.11, 0.04);
-  const tail = new THREE.Mesh(tailGeo, tailLightMat);
-  tail.position.set(0, 0.68, -2.46);
-  group.add(tail);
+  exteriorShellMeshes.push(splitter);
 
   return {
     group,
     bodyMaterial,
+    exteriorShellMeshes,
     haloOuterMat,
     haloInnerMat,
     tailLightMat,
@@ -518,7 +464,7 @@ export async function loadChallengerModel(
 
   let bodyMaterial: THREE.MeshPhysicalMaterial;
   let grillMaterials: THREE.MeshStandardMaterial[] = [];
-  let shellFadeMaterials: THREE.Material[] = [];
+  let exteriorShellMeshes: THREE.Mesh[] = [];
   let haloOuterMat: THREE.MeshStandardMaterial;
   let haloInnerMat: THREE.MeshStandardMaterial;
   let tailLightMat: THREE.MeshStandardMaterial;
@@ -534,19 +480,19 @@ export async function loadChallengerModel(
     gltfScene.scale.setScalar(0.01);
     gltfScene.updateMatrixWorld(true);
 
-    // Compute exact world-space bounding box to center X/Z and place tires flush at y = 0
+    // Center X/Z and place tires at y = 0.002m so they rest cleanly on top of the road surface
     const box = new THREE.Box3().setFromObject(gltfScene);
     const center = box.getCenter(new THREE.Vector3());
 
     gltfScene.position.x -= center.x;
     gltfScene.position.z -= center.z;
-    gltfScene.position.y -= box.min.y;
+    gltfScene.position.y = -box.min.y + 0.002;
     gltfScene.updateMatrixWorld(true);
 
     const upgraded = upgradeChallengerMaterials(gltfScene);
     bodyMaterial = upgraded.bodyMaterial;
     grillMaterials = upgraded.grillMaterials;
-    shellFadeMaterials = upgraded.shellFadeMaterials;
+    exteriorShellMeshes = upgraded.exteriorShellMeshes;
     haloOuterMat = upgraded.haloOuterMat;
     haloInnerMat = upgraded.haloInnerMat;
     tailLightMat = upgraded.tailLightMat;
@@ -560,6 +506,7 @@ export async function loadChallengerModel(
     onProgress?.(100);
     const fallback = createFallbackChallenger();
     bodyMaterial = fallback.bodyMaterial;
+    exteriorShellMeshes = fallback.exteriorShellMeshes;
     haloOuterMat = fallback.haloOuterMat;
     haloInnerMat = fallback.haloInnerMat;
     tailLightMat = fallback.tailLightMat;
@@ -567,7 +514,7 @@ export async function loadChallengerModel(
     rootGroup.add(fallback.group);
   }
 
-  // Mount the 3D Supercharged V8 Engine Assembly & Front Radiator Grille Portal inside the car
+  // Mount the 3D Supercharged V8 Engine Assembly & Grille Aperture Louvers
   const engineAssembly: EngineAssemblyInstance = createEngineAssembly();
   rootGroup.add(engineAssembly.group);
   rootGroup.add(engineAssembly.grillePortalGroup);
@@ -581,46 +528,35 @@ export async function loadChallengerModel(
     bodyMaterial.needsUpdate = true;
   };
 
-  /**
-   * Updates the Challenger's physical forward travel, wheel spin, grille aperture passage,
-   * and internal V8 engine disassembly/reassembly across Scenes 01–07.
-   * Returns current car Z offset so the studio ground shadow tracks the vehicle.
-   */
   const updateScrollState = (
     progress: number,
     elapsedTime: number,
-    reducedMotion: boolean
+    reducedMotion: boolean,
+    isMobile: boolean
   ): number => {
     const p = Math.max(0, Math.min(1, progress));
 
     // ==========================================================================
-    // SCENE 01 & 02: PHYSICAL FORWARD CAR MOTION & WHEEL ROTATION
+    // PRIORITY 2 & 6: PHYSICAL FORWARD MOTION ALONG THE ROAD & WHEEL ROTATION
     // ==========================================================================
-    // In Scene 01 (0.00 -> 0.12), car begins at Z = -2.35m in the studio depth and starts creeping forward.
-    // In Scene 02 (0.12 -> 0.28), car accelerates toward the viewer to Z = +0.65m (total 3.00m roll).
-    const creepDist = smoothstep(0.0, 0.12, p) * 0.45;
-    const driveDist = smoothstep(0.12, 0.28, p) * 2.55;
-    // In Scene 07 (0.86 -> 1.00), car settles cleanly at Z = 0.0m for the final studio stance
-    const settleBack = smoothstep(0.86, 1.0, p) * 0.65;
+    // - At p = 0.00 (Dark Studio Prologue), car starts at Z = -5.80m.
+    // - From p = 0.03 -> 0.25 (Road Drive), car physically drives straight forward (+Z)
+    //   along the black road to Z = +1.00m (total 6.80m forward travel, X strictly 0.0).
+    // - From p = 0.88 -> 1.00 (Final Return), car settles back slightly to Z = -1.20m.
+    const driveForward = smoothstep(0.03, 0.25, p) * 6.80;
+    const returnSettle = smoothstep(0.88, 1.00, p) * 2.20;
 
-    const totalForwardTravel = creepDist + driveDist;
-    const carZ = -2.35 + totalForwardTravel - settleBack;
-    rootGroup.position.z = carZ;
-
-    // Subtle suspension pitch when accelerating forward in Scene 02
-    const accelEnvelope =
-      !reducedMotion
-        ? smoothstep(0.11, 0.18, p) * (1 - smoothstep(0.23, 0.29, p))
-        : 0;
-    rootGroup.rotation.x = -accelEnvelope * 0.011;
+    const netDisplacement = driveForward - returnSettle;
+    const carZ = -5.80 + netDisplacement;
+    rootGroup.position.set(0, 0, carZ);
 
     // Wheel radius is 0.387m -> angular rotation theta = distance / radius
     const wheelRadius = 0.387;
-    const wheelSpinAngle = (totalForwardTravel - settleBack) / wheelRadius;
+    const wheelSpinAngle = netDisplacement / wheelRadius;
 
-    // Straighten front wheels from parked show angle (0.00) to straight ahead as car rolls (0.14)
+    // Straighten front wheels along the road as the car begins rolling (p: 0.01 -> 0.07)
     const steerStraightFactor =
-      smoothstep(0.05, 0.16, p) * (1 - smoothstep(0.90, 0.99, p));
+      smoothstep(0.01, 0.07, p) * (1 - smoothstep(0.92, 0.99, p));
 
     for (let i = 0; i < wheelRigs.length; i++) {
       const rig = wheelRigs[i];
@@ -635,18 +571,18 @@ export async function loadChallengerModel(
     }
 
     // ==========================================================================
-    // SCENE 03 -> 07: GRILLE PASSAGE & EXTERIOR SHELL CROSS-FADE
+    // PRIORITY 3: GRILLE PASSAGE & EXTERIOR SHELL TRANSITION
     // ==========================================================================
-    // As camera flies through the front radiator grille (0.29 -> 0.36), open the solid outer grille texture
-    // and fade the upper hood/shell polygons so the internal V8 assembly is unobstructed.
-    // As camera exits back through the grille in Scene 07 (0.85 -> 0.91), restore 100% solid exterior.
-    const interiorMask =
-      smoothstep(0.28, 0.35, p) * (1 - smoothstep(0.85, 0.91, p));
+    // As camera aligns with and flies through the front radiator grille (0.26 -> 0.34),
+    // open the front grille mesh and hide the outer car shell once inside (0.33 -> 0.85)
+    // so the camera never intersects solid body polygons during the engine explosion.
+    const grilleOpenFactor =
+      smoothstep(0.25, 0.31, p) * (1 - smoothstep(0.85, 0.90, p));
 
     grillMaterials.forEach((gMat) => {
-      if (interiorMask > 0.01) {
+      if (grilleOpenFactor > 0.01) {
         gMat.transparent = true;
-        gMat.opacity = Math.max(0.0, 1 - interiorMask * 1.15);
+        gMat.opacity = Math.max(0, 1 - grilleOpenFactor * 1.15);
         gMat.depthWrite = gMat.opacity > 0.5;
       } else {
         gMat.transparent = false;
@@ -655,34 +591,20 @@ export async function loadChallengerModel(
       }
     });
 
-    shellFadeMaterials.forEach((sMat) => {
-      const mat = sMat as THREE.MeshStandardMaterial;
-      if (interiorMask > 0.15) {
-        mat.transparent = true;
-        mat.opacity = Math.max(0.08, 1 - (interiorMask - 0.15) * 1.08);
-        mat.depthWrite = mat.opacity > 0.65;
-      } else {
-        mat.transparent = false;
-        mat.opacity = 1.0;
-        mat.depthWrite = true;
-      }
-    });
+    // Hide solid exterior car shell while camera is deep inside the engine bay (0.335 <= p <= 0.855)
+    const insideEngineBay = p >= 0.335 && p <= 0.855;
+    for (let i = 0; i < exteriorShellMeshes.length; i++) {
+      exteriorShellMeshes[i].visible = !insideEngineBay;
+    }
 
-    // Update internal Supercharged V8 Engine & Grille Portal
-    engineAssembly.updateState(p, elapsedTime, reducedMotion);
+    // Update internal Supercharged V8 Engine & Grille Louvers
+    engineAssembly.updateState(p, elapsedTime, reducedMotion, isMobile);
 
-    // ==========================================================================
-    // DYNAMIC HEADLIGHT & TAILLIGHT INTENSITY
-    // ==========================================================================
+    // Dynamic Headlight Intensity
     const frontOpticsBoost =
-      p > 0.10 && p < 0.36
-        ? 1.55
-        : p > 0.85
-          ? 1.35
-          : 1.0 + Math.sin(elapsedTime * 1.8) * 0.06;
-
+      p > 0.04 && p < 0.33 ? 1.5 : 1.0 + Math.sin(elapsedTime * 1.8) * 0.05;
     haloOuterMat.emissiveIntensity = 3.4 * frontOpticsBoost;
-    haloInnerMat.emissiveIntensity = 3.1 * frontOpticsBoost;
+    haloInnerMat.emissiveIntensity = 3.0 * frontOpticsBoost;
     tailLightMat.emissiveIntensity = 2.8;
 
     return carZ;

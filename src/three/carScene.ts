@@ -32,6 +32,69 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/**
+ * Generates a realistic, minimalist black asphalt road texture with crisp white edge lines
+ * and a dashed center lane marking that converges toward the central vanishing point.
+ */
+function createRoadTexture(maxAnisotropy: number): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 2048;
+  const ctx = canvas.getContext('2d');
+
+  if (ctx) {
+    ctx.clearRect(0, 0, 1024, 2048);
+
+    // Asphalt road body (occupies center 86% of width with clean anti-aliased shoulders)
+    const roadLeft = 72;
+    const roadRight = 952;
+    const roadWidth = roadRight - roadLeft;
+
+    ctx.fillStyle = '#111318';
+    ctx.fillRect(roadLeft, 0, roadWidth, 2048);
+
+    // Subtle asphalt micro-grain along the surface
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.022)';
+    for (let i = 0; i < 3200; i++) {
+      const gx = roadLeft + ((i * 269) % roadWidth);
+      const gy = (i * 613) % 2048;
+      ctx.fillRect(gx, gy, 2, 3);
+    }
+
+    // Subtle tire track sheen in left and right lanes
+    const leftLaneGrad = ctx.createLinearGradient(roadLeft, 0, roadRight, 0);
+    leftLaneGrad.addColorStop(0, 'rgba(0,0,0,0.35)');
+    leftLaneGrad.addColorStop(0.25, 'rgba(255,255,255,0.03)');
+    leftLaneGrad.addColorStop(0.5, 'rgba(0,0,0,0.18)');
+    leftLaneGrad.addColorStop(0.75, 'rgba(255,255,255,0.03)');
+    leftLaneGrad.addColorStop(1, 'rgba(0,0,0,0.35)');
+    ctx.fillStyle = leftLaneGrad;
+    ctx.fillRect(roadLeft, 0, roadWidth, 2048);
+
+    // Crisp continuous white outer shoulder markings
+    ctx.fillStyle = '#f1f5f9';
+    ctx.fillRect(roadLeft + 26, 0, 14, 2048);
+    ctx.fillRect(roadRight - 40, 0, 14, 2048);
+
+    // Crisp dashed center dividing line along X = 0
+    const centerX = 512 - 7;
+    const dashPeriod = 128;
+    const dashLen = 68;
+    for (let y = 0; y < 2048; y += dashPeriod) {
+      ctx.fillRect(centerX, y + 16, 14, dashLen);
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1, 5);
+  tex.anisotropy = Math.min(8, maxAnisotropy);
+  tex.needsUpdate = true;
+  return tex;
+}
+
 export function createCarScene(): CarSceneController {
   let containerEl: HTMLElement | null = null;
   let renderer: THREE.WebGLRenderer | null = null;
@@ -39,6 +102,12 @@ export function createCarScene(): CarSceneController {
   let camera: THREE.PerspectiveCamera | null = null;
   let envTexture: THREE.Texture | null = null;
   let carInstance: CarModelInstance | null = null;
+
+  let roadMesh: THREE.Mesh | null = null;
+  let roadGeo: THREE.BufferGeometry | null = null;
+  let roadMat: THREE.MeshStandardMaterial | null = null;
+  let roadTex: THREE.CanvasTexture | null = null;
+
   let shadowMesh: THREE.Mesh | null = null;
   let shadowTex: THREE.CanvasTexture | null = null;
   let shadowGeo: THREE.BufferGeometry | null = null;
@@ -53,10 +122,15 @@ export function createCarScene(): CarSceneController {
   const pointerNorm = new THREE.Vector2(0, 0);
   const smoothedPointer = new THREE.Vector2(0, 0);
 
-  const currentCamPos = new THREE.Vector3(2.45, 1.08, 3.85);
-  const targetCamPos = new THREE.Vector3(2.45, 1.08, 3.85);
-  const currentLookAt = new THREE.Vector3(0.0, 0.62, -1.65);
-  const targetLookAt = new THREE.Vector3(0.0, 0.62, -1.65);
+  const currentCamPos = new THREE.Vector3(2.15, 1.12, -0.45);
+  const targetCamPos = new THREE.Vector3(2.15, 1.12, -0.45);
+  const currentLookAt = new THREE.Vector3(0.0, 0.58, -5.45);
+  const targetLookAt = new THREE.Vector3(0.0, 0.58, -5.45);
+
+  const darkStudioColor = new THREE.Color(0x08090c);
+  const whiteRoadSceneColor = new THREE.Color(0xf4f5f7);
+  const engineBayDarkColor = new THREE.Color(0x07090e);
+  const workingBgColor = new THREE.Color(0x08090c);
 
   let sceneCallbacks: CarSceneCallbacks = {};
 
@@ -82,11 +156,11 @@ export function createCarScene(): CarSceneController {
     const aspect = width / height;
     camera.aspect = aspect;
 
-    // Responsive FOV tuned for mobile portrait (360x800, 390x844, 430x932), tablet, and desktop
-    if (aspect < 0.65) {
-      camera.fov = 50;
+    // Dedicated FOV for mobile portrait (360px, 390px, 430px), tablet (768px), and desktop
+    if (aspect < 0.62) {
+      camera.fov = 52;
     } else if (aspect < 1.0) {
-      camera.fov = 44;
+      camera.fov = 45;
     } else {
       camera.fov = 36;
     }
@@ -94,48 +168,59 @@ export function createCarScene(): CarSceneController {
   };
 
   /**
-   * 11 precision keyframes spanning the 7 continuous cinematic scroll scenes:
-   * - Scene 01 (0.00 - 0.12): Prologue — Challenger in dark volumetric studio depth
-   * - Scene 02 (0.12 - 0.28): Car physically drives forward toward the viewer with rotating wheels
-   * - Scene 03 (0.28 - 0.40): Camera flies directly through the front radiator grille opening
-   * - Scene 04 (0.40 - 0.55): Heart of the Machine — close-up orbit around working Supercharged V8
-   * - Scene 05 (0.55 - 0.71): Engine explodes into 28 recognizable mechanical components & shards
-   * - Scene 06 (0.71 - 0.85): Engine reassembles from shards back into the solid unit
-   * - Scene 07 (0.85 - 1.00): Camera flies back out through the grille to a dramatic 3/4 exterior stance
+   * Dedicated Desktop Keyframes across the 0.00 -> 1.00 scroll timeline:
+   * - 0.00: Dark studio prologue (Car at Z = -5.80m)
+   * - 0.05: Transition to white scene with black perspective road
+   * - 0.05 -> 0.25 (20%): Car drives toward viewer along the black road (Z = -5.80m -> +1.00m)
+   * - 0.25 -> 0.35 (10%): Camera aligns with Challenger front fascia & flies through radiator grille
+   * - 0.35 -> 0.70 (35%): Engine bay hold, escalating vibration, and 3D disassembly into recognizable parts
+   * - 0.70 -> 1.00 (30%): Reverse reassembly of engine, fly-out through grille to road, and return to studio
    */
-  const keyframes: {
+  const desktopKeyframes: {
     at: number;
     pos: [number, number, number];
     look: [number, number, number];
-    interiorWeight: number;
   }[] = [
-    // Scene 01: Prologue (Car at Z = -2.35m)
-    { at: 0.00, pos: [2.35, 1.08, 3.75], look: [0.0, 0.58, -1.65], interiorWeight: 0.0 },
-    { at: 0.12, pos: [1.52, 0.92, 3.42], look: [0.0, 0.60, -0.85], interiorWeight: 0.0 },
+    { at: 0.00, pos: [2.15, 1.12, -0.45], look: [0.0, 0.58, -5.45] },
+    { at: 0.05, pos: [0.0, 1.16, 4.15], look: [0.0, 0.62, -6.50] },
+    { at: 0.16, pos: [0.0, 0.86, 4.08], look: [0.0, 0.62, -1.50] },
+    { at: 0.25, pos: [0.0, 0.64, 4.00], look: [0.0, 0.64, 2.18] },
+    { at: 0.30, pos: [0.0, 0.64, 3.26], look: [0.0, 0.64, 2.18] },
+    { at: 0.35, pos: [0.0, 0.68, 2.84], look: [0.0, 0.64, 2.18] },
+    { at: 0.44, pos: [0.08, 0.72, 2.88], look: [0.0, 0.64, 2.18] },
+    { at: 0.56, pos: [0.28, 0.80, 3.12], look: [0.0, 0.64, 2.16] },
+    { at: 0.68, pos: [-0.24, 0.78, 3.16], look: [0.0, 0.63, 2.16] },
+    { at: 0.84, pos: [0.0, 0.65, 2.88], look: [0.0, 0.64, 2.18] },
+    { at: 0.91, pos: [0.0, 0.76, 4.12], look: [0.0, 0.60, 0.40] },
+    { at: 1.00, pos: [-2.35, 1.12, 3.35], look: [0.0, 0.54, -1.20] },
+  ];
 
-    // Scene 02: Car drives forward toward viewer (Car moves from Z = -1.90m to +0.65m)
-    { at: 0.21, pos: [0.38, 0.74, 3.68], look: [0.0, 0.64, 1.45], interiorWeight: 0.15 },
-    { at: 0.28, pos: [0.0, 0.65, 3.76], look: [0.0, 0.64, 1.83], interiorWeight: 0.85 },
-
-    // Scene 03: Flight straight through the front radiator grille portal (at Z = 2.91m) into engine bay
-    { at: 0.34, pos: [0.0, 0.65, 2.96], look: [0.0, 0.64, 1.83], interiorWeight: 1.0 },
-    { at: 0.40, pos: [0.16, 0.72, 2.48], look: [0.0, 0.64, 1.83], interiorWeight: 1.0 },
-
-    // Scene 04: Heart of the Machine — orbiting the working Supercharged V8 (center at Z = 1.83m)
-    { at: 0.48, pos: [-0.44, 0.80, 2.38], look: [0.0, 0.64, 1.83], interiorWeight: 1.0 },
-    { at: 0.55, pos: [-0.28, 0.85, 2.54], look: [0.0, 0.65, 1.83], interiorWeight: 1.0 },
-
-    // Scene 05: Engine Explodes Into Components — camera pulls back and glides among suspended parts
-    { at: 0.63, pos: [0.56, 0.95, 2.78], look: [0.0, 0.67, 1.80], interiorWeight: 1.0 },
-    { at: 0.71, pos: [0.38, 0.86, 2.66], look: [0.0, 0.65, 1.82], interiorWeight: 1.0 },
-
-    // Scene 06: Engine Reassembles From Shards — components lock back together
-    { at: 0.79, pos: [-0.20, 0.73, 2.50], look: [0.0, 0.64, 1.83], interiorWeight: 1.0 },
-    { at: 0.85, pos: [0.0, 0.65, 2.72], look: [0.0, 0.64, 1.83], interiorWeight: 1.0 },
-
-    // Scene 07: Return Outside — camera exits back through radiator grille to studio 3/4 stance
-    { at: 0.91, pos: [0.32, 0.76, 3.82], look: [0.0, 0.62, 0.85], interiorWeight: 0.2 },
-    { at: 1.00, pos: [-2.95, 1.15, 3.85], look: [0.0, 0.54, 0.0], interiorWeight: 0.0 },
+  /**
+   * Dedicated Mobile Portrait Keyframes (360px, 390px, 430px, 768px):
+   * Calibrated camera distance, height, and look targets so:
+   * - The Challenger is never cropped (wheels, roof, front bumper fully visible).
+   * - The car never overlaps the top Prologue title.
+   * - The black road has a clear vertical perspective to the center vanishing point.
+   * - The camera enters the radiator grille straight along X = 0.
+   * - The V8 engine and all exploded components stay large and legible in portrait format.
+   */
+  const mobileKeyframes: {
+    at: number;
+    pos: [number, number, number];
+    look: [number, number, number];
+  }[] = [
+    { at: 0.00, pos: [1.75, 1.32, 1.25], look: [0.0, 0.52, -5.60] },
+    { at: 0.05, pos: [0.0, 1.30, 4.85], look: [0.0, 0.56, -6.50] },
+    { at: 0.16, pos: [0.0, 0.96, 4.65], look: [0.0, 0.60, -1.50] },
+    { at: 0.25, pos: [0.0, 0.64, 4.25], look: [0.0, 0.64, 2.18] },
+    { at: 0.30, pos: [0.0, 0.64, 3.26], look: [0.0, 0.64, 2.18] },
+    { at: 0.35, pos: [0.0, 0.70, 3.06], look: [0.0, 0.64, 2.18] },
+    { at: 0.44, pos: [0.06, 0.74, 3.12], look: [0.0, 0.64, 2.18] },
+    { at: 0.56, pos: [0.18, 0.82, 3.46], look: [0.0, 0.64, 2.16] },
+    { at: 0.68, pos: [-0.16, 0.80, 3.50], look: [0.0, 0.63, 2.16] },
+    { at: 0.84, pos: [0.0, 0.65, 3.06], look: [0.0, 0.64, 2.18] },
+    { at: 0.91, pos: [0.0, 0.86, 4.60], look: [0.0, 0.58, 0.40] },
+    { at: 1.00, pos: [-1.80, 1.26, 4.45], look: [0.0, 0.50, -1.20] },
   ];
 
   const sampleChoreography = (p: number): KeyframePose => {
@@ -145,21 +230,21 @@ export function createCarScene(): CarSceneController {
     const aspect = width / height;
     const isMobile = aspect < 1.0;
 
+    const activeFrames = isMobile ? mobileKeyframes : desktopKeyframes;
+
     let idx = 0;
-    for (let i = 0; i < keyframes.length - 1; i++) {
-      if (clamped >= keyframes[i].at && clamped <= keyframes[i + 1].at) {
+    for (let i = 0; i < activeFrames.length - 1; i++) {
+      if (clamped >= activeFrames[i].at && clamped <= activeFrames[i + 1].at) {
         idx = i;
         break;
       }
     }
 
-    const k0 = keyframes[idx];
-    const k1 = keyframes[idx + 1];
+    const k0 = activeFrames[idx];
+    const k1 = activeFrames[idx + 1];
     const span = Math.max(0.0001, k1.at - k0.at);
     const localT = (clamped - k0.at) / span;
     const smoothT = localT * localT * (3 - 2 * localT);
-
-    const interiorW = THREE.MathUtils.lerp(k0.interiorWeight, k1.interiorWeight, smoothT);
 
     const basePos = new THREE.Vector3(
       THREE.MathUtils.lerp(k0.pos[0], k1.pos[0], smoothT),
@@ -173,27 +258,65 @@ export function createCarScene(): CarSceneController {
       THREE.MathUtils.lerp(k0.look[2], k1.look[2], smoothT)
     );
 
-    if (isMobile) {
-      // Dedicated mobile camera framing:
-      // 1. In exterior scenes (interiorW ~ 0), pull camera back along view ray so the full 5m Challenger
-      //    never clips horizontally on 360px/390px/430px portrait screens.
-      // 2. In interior engine scenes (interiorW ~ 1), pull back slightly (1.22x) from the engine center
-      //    so the exploded V8 components stay completely inside the portrait frame without clipping the grille.
-      const exteriorScale = Math.min(1.48, 1.0 + (1.0 - aspect) * 0.72);
-      const interiorScale = Math.min(1.24, 1.0 + (1.0 - aspect) * 0.36);
-      const effectiveScale = THREE.MathUtils.lerp(exteriorScale, interiorScale, interiorW);
-
-      const viewOffset = basePos.clone().sub(baseLook).multiplyScalar(effectiveScale);
-      basePos.copy(baseLook).add(viewOffset);
-
-      // Keep grille passage strictly centered in X during Scene 03 & early Scene 07
-      const grillePassMask =
-        smoothstep(0.25, 0.31, clamped) * (1 - smoothstep(0.36, 0.41, clamped)) +
-        smoothstep(0.83, 0.87, clamped) * (1 - smoothstep(0.90, 0.94, clamped));
-      basePos.x *= 1 - Math.min(1, grillePassMask);
+    // Extra aspect compensation for ultra-narrow phones (e.g. 360x800, aspect = 0.45)
+    if (isMobile && aspect < 0.55) {
+      const narrowPullback = 1.0 + (0.55 - aspect) * 0.65;
+      const grillePassLock =
+        smoothstep(0.24, 0.28, clamped) * (1 - smoothstep(0.32, 0.36, clamped));
+      const effectivePull = THREE.MathUtils.lerp(narrowPullback, 1.0, grillePassLock);
+      const offset = basePos.clone().sub(baseLook).multiplyScalar(effectivePull);
+      basePos.copy(baseLook).add(offset);
     }
 
     return { pos: basePos, look: baseLook };
+  };
+
+  /**
+   * Smoothly updates the intentional background color, fog, and black road visibility:
+   * - 0.00 -> 0.06: Dark Studio (#08090c) smoothly transitions to Pure White Road Scene (#f4f5f7)
+   * - 0.06 -> 0.25: White scene with minimalist black perspective road
+   * - 0.25 -> 0.34: As camera passes through the radiator grille, scene transitions to Dark Engine Bay (#07090e)
+   * - 0.34 -> 0.84: Dark Engine Bay for high-contrast mechanical disassembly & reassembly
+   * - 0.84 -> 0.91: Camera exits back through grille onto the road
+   * - 0.91 -> 1.00: Smooth return to Dark Studio (#08090c) before regular website sections
+   */
+  const updateEnvironmentAndRoad = (p: number) => {
+    if (!scene || !roadMat || !roadMesh || !shadowMat) return;
+
+    const toWhiteRoad = smoothstep(0.015, 0.065, p);
+    const toEngineBay = smoothstep(0.26, 0.335, p);
+    const exitToRoad = smoothstep(0.845, 0.90, p);
+    const backToDarkStudio = smoothstep(0.92, 0.985, p);
+
+    // Compute current background color without any sudden flashes
+    workingBgColor.copy(darkStudioColor);
+    workingBgColor.lerp(whiteRoadSceneColor, toWhiteRoad);
+    workingBgColor.lerp(engineBayDarkColor, toEngineBay);
+    workingBgColor.lerp(whiteRoadSceneColor, exitToRoad);
+    workingBgColor.lerp(darkStudioColor, backToDarkStudio);
+
+    scene.background = workingBgColor;
+    if (scene.fog instanceof THREE.Fog) {
+      scene.fog.color.copy(workingBgColor);
+    }
+
+    // Road visibility: emerges with the white scene, hides while inside the engine bay, reappears on exit
+    const roadAppear = smoothstep(0.015, 0.065, p);
+    const roadHideInBay = 1 - smoothstep(0.27, 0.33, p);
+    const roadReappearOut = smoothstep(0.85, 0.90, p);
+    const roadFadeEnd = 1 - smoothstep(0.93, 0.99, p);
+
+    const roadAlpha = Math.max(
+      roadAppear * roadHideInBay,
+      roadReappearOut * roadFadeEnd
+    );
+
+    roadMesh.visible = roadAlpha > 0.005;
+    roadMat.opacity = roadAlpha;
+
+    // Ground contact shadow under the Challenger (visible whenever exterior car is visible)
+    const carShadowAlpha = Math.max(1 - toEngineBay, exitToRoad);
+    shadowMat.opacity = 0.88 * carShadowAlpha;
   };
 
   const initScene = async () => {
@@ -203,16 +326,24 @@ export function createCarScene(): CarSceneController {
     const isMobileViewport = width < 768;
 
     scene = new THREE.Scene();
-    scene.background = null;
+    scene.background = darkStudioColor.clone();
+    scene.fog = new THREE.Fog(0x08090c, 16, 44);
 
-    // Small near plane (0.04m) ensures zero near-clipping when flying through the radiator grille
-    camera = new THREE.PerspectiveCamera(36, width / height, 0.04, 45);
+    // Near plane 0.04m prevents any polygon clipping during the radiator grille flight
+    camera = new THREE.PerspectiveCamera(36, width / height, 0.04, 55);
     updateCameraAspect();
+
+    const initialPose = sampleChoreography(scrollProgress);
+    currentCamPos.copy(initialPose.pos);
+    targetCamPos.copy(initialPose.pos);
+    currentLookAt.copy(initialPose.look);
+    targetLookAt.copy(initialPose.look);
     camera.position.copy(currentCamPos);
+    camera.lookAt(currentLookAt);
 
     renderer = new THREE.WebGLRenderer({
       antialias: !isSoftwareGl,
-      alpha: true,
+      alpha: false,
       powerPreference: 'high-performance',
     });
     renderer.setSize(width, height);
@@ -220,7 +351,7 @@ export function createCarScene(): CarSceneController {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxDpr));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.25;
+    renderer.toneMappingExposure = 1.22;
     renderer.shadowMap.enabled = !isSoftwareGl && !isMobileViewport;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -243,7 +374,7 @@ export function createCarScene(): CarSceneController {
     pmremGen.dispose();
 
     // 1. Overhead Warm Studio Key Light
-    const keyLight = new THREE.DirectionalLight(0xfff7ed, 3.1);
+    const keyLight = new THREE.DirectionalLight(0xfff7ed, 3.0);
     keyLight.position.set(4.5, 6.4, 4.8);
     keyLight.castShadow = !isSoftwareGl && !isMobileViewport;
     if (keyLight.castShadow) {
@@ -251,7 +382,7 @@ export function createCarScene(): CarSceneController {
       keyLight.shadow.mapSize.height = 1024;
       keyLight.shadow.bias = -0.0004;
       keyLight.shadow.camera.near = 1.0;
-      keyLight.shadow.camera.far = 16;
+      keyLight.shadow.camera.far = 20;
       keyLight.shadow.camera.left = -3.5;
       keyLight.shadow.camera.right = 3.5;
       keyLight.shadow.camera.top = 3.5;
@@ -259,53 +390,71 @@ export function createCarScene(): CarSceneController {
     }
     scene.add(keyLight);
 
-    // 2. Cool Architectural Fill Light (Sculpts Challenger side character lines)
-    const fillLight = new THREE.DirectionalLight(0x93c5fd, 1.55);
+    // 2. Cool Architectural Fill Light
+    const fillLight = new THREE.DirectionalLight(0x93c5fd, 1.5);
     fillLight.position.set(-5.2, 3.8, 2.8);
     scene.add(fillLight);
 
-    // 3. Warm Rim / Backlight (Separates fastback roofline from dark studio void)
-    const rimLight = new THREE.DirectionalLight(0xe04f26, 2.8);
-    rimLight.position.set(-3.5, 3.4, -5.2);
+    // 3. Warm Rim / Backlight
+    const rimLight = new THREE.DirectionalLight(0xe04f26, 2.6);
+    rimLight.position.set(-3.5, 3.4, -6.0);
     scene.add(rimLight);
 
     // 4. Front Grille & Engine Bay Key Spotlight
-    const frontSpot = new THREE.SpotLight(0xffffff, 3.6, 15, Math.PI / 3, 0.6, 1.4);
-    frontSpot.position.set(0, 3.2, 5.4);
+    const frontSpot = new THREE.SpotLight(0xffffff, 3.5, 16, Math.PI / 3, 0.6, 1.4);
+    frontSpot.position.set(0, 3.2, 5.5);
     scene.add(frontSpot);
 
     // 5. Ambient Studio Hemisphere
-    const hemiLight = new THREE.HemisphereLight(0x2d3748, 0x08090c, 1.25);
+    const hemiLight = new THREE.HemisphereLight(0x334155, 0x08090c, 1.25);
     scene.add(hemiLight);
 
-    // 6. Calibrated Ground Contact Shadow that tracks the Challenger's Z travel
+    // 6. Minimalist Realistic Black Asphalt Road on the White Background
+    roadTex = createRoadTexture(renderer.capabilities.getMaxAnisotropy());
+    roadGeo = new THREE.PlaneGeometry(4.5, 58);
+    roadMat = new THREE.MeshStandardMaterial({
+      map: roadTex,
+      roughness: 0.86,
+      metalness: 0.06,
+      transparent: true,
+      opacity: 0.0,
+      depthWrite: true,
+    });
+    roadMesh = new THREE.Mesh(roadGeo, roadMat);
+    roadMesh.rotation.x = -Math.PI / 2;
+    roadMesh.position.set(0, 0.0005, -18.0);
+    roadMesh.receiveShadow = !isSoftwareGl && !isMobileViewport;
+    roadMesh.visible = false;
+    scene.add(roadMesh);
+
+    // 7. Ground Contact Shadow under the Challenger (tracks carZ)
     const shadowCanvas = document.createElement('canvas');
     shadowCanvas.width = 256;
     shadowCanvas.height = 512;
     const sCtx = shadowCanvas.getContext('2d');
     if (sCtx) {
       const grad = sCtx.createRadialGradient(128, 256, 20, 128, 256, 235);
-      grad.addColorStop(0, 'rgba(0, 0, 0, 0.90)');
-      grad.addColorStop(0.55, 'rgba(0, 0, 0, 0.54)');
+      grad.addColorStop(0, 'rgba(0, 0, 0, 0.88)');
+      grad.addColorStop(0.55, 'rgba(0, 0, 0, 0.48)');
       grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
       sCtx.fillStyle = grad;
       sCtx.fillRect(0, 0, 256, 512);
     }
 
     shadowTex = new THREE.CanvasTexture(shadowCanvas);
-    shadowGeo = new THREE.PlaneGeometry(3.1, 6.1);
+    shadowGeo = new THREE.PlaneGeometry(3.0, 5.9);
     shadowMat = new THREE.MeshBasicMaterial({
       map: shadowTex,
       transparent: true,
       depthWrite: false,
-      opacity: 0.92,
+      opacity: 0.88,
     });
     shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
     shadowMesh.rotation.x = -Math.PI / 2;
-    shadowMesh.position.set(0, 0.004, -2.35);
+    shadowMesh.position.set(0, 0.0015, -5.80);
     scene.add(shadowMesh);
 
-    // Load the real Dodge Challenger 3D model + internal V8 assembly
+    // Load the real Dodge Challenger 3D model + internal V8 assembly (cached across resizes)
     carInstance = await loadChallengerModel((pct) => {
       if (!isUnmounted) {
         sceneCallbacks.onLoadProgress?.(pct);
@@ -334,21 +483,22 @@ export function createCarScene(): CarSceneController {
       lastTime = now;
 
       if (!isContextLost && renderer && scene && camera && carInstance) {
+        const width = containerEl?.clientWidth || window.innerWidth;
+        const height = containerEl?.clientHeight || window.innerHeight;
+        const isMobile = width < 768 || width / height < 1.0;
+
         const pose = sampleChoreography(scrollProgress);
 
-        // Subtle desktop mouse parallax (disabled during exact grille passage so camera stays centered)
-        const width = containerEl?.clientWidth || window.innerWidth;
-        const allowParallax = !reducedMotion && width >= 768;
-        const grilleLock =
-          smoothstep(0.24, 0.30, scrollProgress) *
-          (1 - smoothstep(0.36, 0.42, scrollProgress));
-        const parallaxWeight = allowParallax ? 0.14 * (1 - grilleLock) : 0;
+        // Subtle desktop mouse parallax ONLY in the initial studio stance (p < 0.03)
+        // so road perspective and radiator grille entry stay 100% locked on axis.
+        const allowParallax = !reducedMotion && !isMobile && scrollProgress < 0.03;
+        const parallaxWeight = allowParallax ? 0.12 * (1 - scrollProgress / 0.03) : 0;
 
         smoothedPointer.lerp(pointerNorm, Math.min(1, delta * 5.0));
 
         targetCamPos.set(
           pose.pos.x + smoothedPointer.x * parallaxWeight,
-          pose.pos.y - smoothedPointer.y * 0.05 * (1 - grilleLock),
+          pose.pos.y - smoothedPointer.y * 0.04 * parallaxWeight,
           pose.pos.z
         );
         targetLookAt.copy(pose.look);
@@ -357,7 +507,7 @@ export function createCarScene(): CarSceneController {
           currentCamPos.copy(targetCamPos);
           currentLookAt.copy(targetLookAt);
         } else {
-          const damp = Math.min(1, delta * 6.5);
+          const damp = Math.min(1, delta * 8.0);
           currentCamPos.lerp(targetCamPos, damp);
           currentLookAt.lerp(targetLookAt, damp);
         }
@@ -365,10 +515,13 @@ export function createCarScene(): CarSceneController {
         camera.position.copy(currentCamPos);
         camera.lookAt(currentLookAt);
 
+        updateEnvironmentAndRoad(scrollProgress);
+
         const currentCarZ = carInstance.updateScrollState(
           scrollProgress,
           elapsed,
-          reducedMotion
+          reducedMotion,
+          isMobile
         );
         if (shadowMesh) {
           shadowMesh.position.z = currentCarZ;
@@ -400,6 +553,9 @@ export function createCarScene(): CarSceneController {
         carInstance.dispose();
         carInstance = null;
       }
+      if (roadGeo) roadGeo.dispose();
+      if (roadMat) roadMat.dispose();
+      if (roadTex) roadTex.dispose();
       if (shadowGeo) shadowGeo.dispose();
       if (shadowMat) shadowMat.dispose();
       if (shadowTex) shadowTex.dispose();
