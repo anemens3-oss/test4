@@ -685,7 +685,7 @@ export function createEngineAssembly(): EngineAssemblyInstance {
   const dummy = new THREE.Object3D();
 
   // ============================================================================
-  // 5. DETERMINISTIC SCROLL CHOREOGRAPHY UPDATE (FAST TRAILER PACE)
+  // 5. DETERMINISTIC SCROLL CHOREOGRAPHY UPDATE (PROPORTIONAL 3X PACE)
   // ============================================================================
   const updateState = (
     scrollProgress: number,
@@ -695,60 +695,61 @@ export function createEngineAssembly(): EngineAssemblyInstance {
   ) => {
     const p = Math.max(0, Math.min(1, scrollProgress));
 
-    // Show grille louvers only during the fast grille approach & exit (0.16 -> 0.90)
-    grillePortalGroup.visible = p >= 0.16 && p <= 0.90;
+    // Show grille louvers during the grille approach & exit (0.24 -> 0.92)
+    grillePortalGroup.visible = p >= 0.24 && p <= 0.92;
 
-    // Illuminate engine bay immediately as camera enters grille (0.18 -> 0.90)
+    // Illuminate engine bay smoothly as camera enters grille (0.26 -> 0.91)
     const bayLightEnvelope =
-      smoothstep(0.18, 0.27, p) * (1 - smoothstep(0.81, 0.89, p));
+      smoothstep(0.26, 0.36, p) * (1 - smoothstep(0.86, 0.92, p));
 
-    // Accelerated Engine Timeline (Desktop & even faster Mobile thresholds):
-    // - 0.28 -> 0.36: Short, punchy escalating vibration right as camera arrives
-    // - 0.34 -> 0.56 (Mobile 0.31 -> 0.52): Energetic disassembly into Crankshaft, Pistons, Rods, Block, Heads, Covers, Blower, Pulleys
-    // - 0.62 -> 0.78 (Mobile 0.58 -> 0.75): Rapid precision reassembly without hanging in mid-air
-    const expStart = isMobile ? 0.31 : 0.34;
-    const expPeak = isMobile ? 0.52 : 0.56;
-    const reassembleStart = isMobile ? 0.58 : 0.62;
-    const reassembleEnd = isMobile ? 0.75 : 0.78;
+    // Proportional Engine Timeline across the 3x scroll distance:
+    // - 0.38 -> 0.46: Camera stops before the engine; engine noticeably vibrates
+    // - 0.46 -> 0.68: Engine components smoothly separate into recognizable parts
+    // - 0.68 -> 0.76: Parts stay suspended in mid-air for clear inspection
+    // - 0.76 -> 0.86: Smooth reassembly (and full reverse on upward scroll)
+    const expStart = 0.46;
+    const expPeak = 0.68;
+    const reassembleStart = 0.76;
+    const reassembleEnd = 0.86;
 
     const explodeUp = smoothstep(expStart, expPeak, p);
     const reassembleDown = smoothstep(reassembleStart, reassembleEnd, p);
     const explosionFactor = Math.max(0, explodeUp - reassembleDown);
 
-    // Short, intense mechanical vibration right before and during initial separation (0.27 -> 0.39)
-    const vibRampUp = smoothstep(0.27, 0.34, p);
-    const vibFadeOut = 1 - smoothstep(0.35, 0.41, p);
+    // Distinct mechanical vibration while camera is stopped in front of engine (0.37 -> 0.52)
+    const vibRampUp = smoothstep(0.37, 0.43, p);
+    const vibFadeOut = 1 - smoothstep(0.47, 0.53, p);
     const tremorIntensity = !reducedMotion ? vibRampUp * vibFadeOut : 0;
 
     engineCoreLight.intensity = bayLightEnvelope * (2.9 + explosionFactor * 3.8);
     engineTopLight.intensity = bayLightEnvelope * 3.9;
 
-    // High-energy pulley rotation
-    const pulleySpinRate = reducedMotion ? 0.5 : 10.5 * (1 - explosionFactor * 0.8);
-    const spinAngle = elapsedTime * pulleySpinRate + p * 26.0;
+    // Smooth pulley rotation
+    const pulleySpinRate = reducedMotion ? 0.5 : 8.5 * (1 - explosionFactor * 0.8);
+    const spinAngle = elapsedTime * pulleySpinRate + p * 22.0;
 
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
-      // Tight stagger window so all components burst out energetically without lagging
+      // Smooth staggered separation so each layer peels apart naturally and hovers in air
       const localExp = smoothstep(
-        part.stagger * 0.25,
-        1.0 - (0.24 - part.stagger) * 0.2,
+        part.stagger * 0.42,
+        1.0 - (0.24 - part.stagger) * 0.35,
         explosionFactor
       );
 
       const floatWave =
         !reducedMotion && localExp > 0.05
-          ? Math.sin(elapsedTime * 2.6 + i * 0.8) * 0.007 * localExp
+          ? Math.sin(elapsedTime * 2.2 + i * 0.8) * 0.008 * localExp
           : 0;
 
-      // Crisp high-frequency mechanical vibration
+      // Noticeable mechanical engine vibration before disassembly
       const vibX =
         tremorIntensity > 0
-          ? Math.sin(elapsedTime * 78 + i * 1.9) * 0.0055 * tremorIntensity
+          ? Math.sin(elapsedTime * 72 + i * 1.9) * 0.0055 * tremorIntensity
           : 0;
       const vibY =
         tremorIntensity > 0
-          ? Math.cos(elapsedTime * 84 + i * 2.3) * 0.0055 * tremorIntensity
+          ? Math.cos(elapsedTime * 78 + i * 2.3) * 0.0055 * tremorIntensity
           : 0;
 
       part.mesh.position.set(
@@ -769,11 +770,11 @@ export function createEngineAssembly(): EngineAssemblyInstance {
       item.mesh.rotation.z += spinAngle * item.speedRatio;
     }
 
-    // Reduced secondary fragments on mobile (55 vs 130) with zero lingering after reassembly
-    const activeShardCount = isMobile ? 55 : 130;
+    // Secondary precision fragments suspended in air during disassembly
+    const activeShardCount = isMobile ? 65 : 140;
     shardInstanced.count = activeShardCount;
     const shardVisibility =
-      smoothstep(expStart + 0.02, expStart + 0.08, p) *
+      smoothstep(expStart + 0.02, expStart + 0.09, p) *
       (1 - smoothstep(reassembleEnd - 0.05, reassembleEnd, p));
     shardInstanced.visible = shardVisibility > 0.01;
 

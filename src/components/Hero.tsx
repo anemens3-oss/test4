@@ -77,7 +77,7 @@ export const Hero: React.FC = () => {
         trigger: sectionRef.current,
         start: 'top top',
         end: 'bottom bottom',
-        scrub: 0.15,
+        scrub: 0.45,
         invalidateOnRefresh: true,
         onUpdate: (self) => {
           const p = self.progress;
@@ -95,17 +95,17 @@ export const Hero: React.FC = () => {
     controllerRef.current?.setPaintPreset(presetId);
   };
 
-  // Priority 2: When scrolling begins, ALL text and UI elements immediately fade out
+  // Priority 2: When scrolling begins, ALL text and UI elements smoothly fade out
   // so the white road scene, approaching car, grille flight, and engine disassembly have zero clutter.
-  const initialUiOpacity = Math.max(0, 1 - scrollProgress / 0.025);
-  const initialUiTranslateY = Math.min(28, (scrollProgress / 0.025) * 28);
-  const isInitialUiInteractive = scrollProgress < 0.022;
+  const initialUiOpacity = Math.max(0, 1 - scrollProgress / 0.045);
+  const initialUiTranslateY = Math.min(28, (scrollProgress / 0.045) * 28);
+  const isInitialUiInteractive = scrollProgress < 0.04;
 
   return (
     <section
       id="hero"
       ref={sectionRef}
-      className="relative h-[185vh] md:h-[250vh] bg-[#08090c] text-[#f5f5f3]"
+      className="relative h-[555vh] md:h-[750vh] bg-[#08090c] text-[#f5f5f3]"
     >
       {/* Sticky Full-Viewport 3D Stage */}
       <div className="sticky top-0 left-0 w-full h-screen overflow-hidden flex flex-col justify-between">

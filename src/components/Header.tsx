@@ -17,7 +17,7 @@ export const Header: React.FC = () => {
       const heroEl = document.getElementById('hero');
       if (heroEl) {
         const heroHeight = heroEl.offsetHeight - window.innerHeight;
-        const inActiveCinema = y > 24 && y < heroHeight - 40;
+        const inActiveCinema = y > 64 && y < heroHeight - 96;
         setIsHiddenDuringCinema(inActiveCinema);
       } else {
         setIsHiddenDuringCinema(false);

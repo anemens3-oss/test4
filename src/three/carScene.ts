@@ -168,15 +168,15 @@ export function createCarScene(): CarSceneController {
   };
 
   /**
-   * Accelerated Desktop Keyframes across the 0.00 -> 1.00 scroll timeline:
-   * - 0.00 -> 0.03: Instant transition to white scene with black perspective road
-   * - 0.005 -> 0.19 (~18%): Fast, energetic Challenger approach along the black road (Z = -5.80m -> +1.00m)
-   * - 0.19 -> 0.28 (~9%): Rapid camera flight straight through the radiator grille into engine bay
-   * - 0.28 -> 0.34 (~6%): Immediate engine reveal & escalating mechanical vibration
-   * - 0.34 -> 0.56 (~22%): Fast, dramatic 3D engine disassembly into recognizable parts
-   * - 0.62 -> 0.78 (~16%): Rapid reverse reassembly of all engine components
-   * - 0.78 -> 0.86 (~8%): Fast fly-out through grille back onto the road
-   * - 0.86 -> 1.00 (~14%): Smooth handoff to Dark Studio & subsequent page sections
+   * Proportional Desktop Keyframes across the 3x-extended 0.00 -> 1.00 scroll timeline:
+   * - 0.00: Car appears in Dark Studio (Z = -5.80m)
+   * - 0.00 -> 0.06: Studio smoothly transitions into white space with black road & markings
+   * - 0.06 -> 0.28: Car slowly and steadily drives toward the viewer along the road
+   * - 0.28 -> 0.38: Camera approaches the radiator grille and passes inside
+   * - 0.38 -> 0.46: Camera stops in front of the engine while the engine noticeably vibrates
+   * - 0.46 -> 0.68: Engine components separate into the air
+   * - 0.68 -> 0.76: Exploded engine components stay suspended in mid-air for inspection
+   * - 0.76 -> 1.00: Reassembly on continued scroll (and full reverse on upward scroll)
    */
   const desktopKeyframes: {
     at: number;
@@ -184,28 +184,24 @@ export function createCarScene(): CarSceneController {
     look: [number, number, number];
   }[] = [
     { at: 0.00, pos: [2.15, 1.12, -0.45], look: [0.0, 0.58, -5.45] },
-    { at: 0.03, pos: [0.0, 1.12, 4.10], look: [0.0, 0.62, -6.20] },
-    { at: 0.11, pos: [0.0, 0.82, 4.04], look: [0.0, 0.63, -1.20] },
-    { at: 0.19, pos: [0.0, 0.64, 3.96], look: [0.0, 0.64, 2.18] },
-    { at: 0.24, pos: [0.0, 0.64, 3.24], look: [0.0, 0.64, 2.18] },
-    { at: 0.28, pos: [0.0, 0.68, 2.84], look: [0.0, 0.64, 2.18] },
-    { at: 0.34, pos: [0.08, 0.72, 2.88], look: [0.0, 0.64, 2.18] },
-    { at: 0.45, pos: [0.26, 0.80, 3.12], look: [0.0, 0.64, 2.16] },
-    { at: 0.56, pos: [-0.22, 0.78, 3.16], look: [0.0, 0.63, 2.16] },
-    { at: 0.78, pos: [0.0, 0.65, 2.88], look: [0.0, 0.64, 2.18] },
-    { at: 0.86, pos: [0.0, 0.76, 4.10], look: [0.0, 0.60, 0.40] },
+    { at: 0.06, pos: [0.0, 1.16, 4.15], look: [0.0, 0.62, -6.50] },
+    { at: 0.17, pos: [0.0, 0.86, 4.08], look: [0.0, 0.62, -1.50] },
+    { at: 0.28, pos: [0.0, 0.64, 4.00], look: [0.0, 0.64, 2.18] },
+    { at: 0.33, pos: [0.0, 0.64, 3.26], look: [0.0, 0.64, 2.18] },
+    { at: 0.38, pos: [0.0, 0.68, 2.84], look: [0.0, 0.64, 2.18] },
+    { at: 0.46, pos: [0.04, 0.70, 2.86], look: [0.0, 0.64, 2.18] },
+    { at: 0.58, pos: [0.24, 0.78, 3.10], look: [0.0, 0.64, 2.16] },
+    { at: 0.68, pos: [0.28, 0.80, 3.16], look: [0.0, 0.63, 2.16] },
+    { at: 0.76, pos: [-0.22, 0.78, 3.16], look: [0.0, 0.63, 2.16] },
+    { at: 0.86, pos: [0.0, 0.65, 2.88], look: [0.0, 0.64, 2.18] },
+    { at: 0.92, pos: [0.0, 0.76, 4.12], look: [0.0, 0.60, 0.40] },
     { at: 1.00, pos: [-2.35, 1.12, 3.35], look: [0.0, 0.54, -1.20] },
   ];
 
   /**
-   * Accelerated Mobile Portrait Keyframes (360px, 390px, 430px, 768px):
-   * - Even snappier phase timings so the entire story completes effortlessly in 1.5–2 screens of touch scroll.
-   * - 0.005 -> 0.17: Fast road approach
-   * - 0.17 -> 0.26: Rapid flight through radiator grille
-   * - 0.26 -> 0.31: Engine reveal & punchy vibration
-   * - 0.31 -> 0.52: Energetic V8 disassembly
-   * - 0.58 -> 0.75: Fast reassembly
-   * - 0.75 -> 1.00: Rapid exit through grille & handoff to content sections
+   * Proportional Mobile Portrait Keyframes (360px, 390px, 430px, 768px):
+   * - Synchronized with the 3x slower scroll distance (555vh) so mobile users experience
+   *   the exact same smooth, unhurried progression of scenes without cropping or empty gaps.
    */
   const mobileKeyframes: {
     at: number;
@@ -213,16 +209,17 @@ export function createCarScene(): CarSceneController {
     look: [number, number, number];
   }[] = [
     { at: 0.00, pos: [1.75, 1.32, 1.25], look: [0.0, 0.52, -5.60] },
-    { at: 0.03, pos: [0.0, 1.28, 4.80], look: [0.0, 0.56, -6.20] },
-    { at: 0.10, pos: [0.0, 0.94, 4.62], look: [0.0, 0.60, -1.20] },
-    { at: 0.17, pos: [0.0, 0.64, 4.22], look: [0.0, 0.64, 2.18] },
-    { at: 0.22, pos: [0.0, 0.64, 3.24], look: [0.0, 0.64, 2.18] },
-    { at: 0.26, pos: [0.0, 0.70, 3.04], look: [0.0, 0.64, 2.18] },
-    { at: 0.31, pos: [0.06, 0.74, 3.10], look: [0.0, 0.64, 2.18] },
-    { at: 0.42, pos: [0.18, 0.82, 3.44], look: [0.0, 0.64, 2.16] },
-    { at: 0.52, pos: [-0.16, 0.80, 3.48], look: [0.0, 0.63, 2.16] },
-    { at: 0.75, pos: [0.0, 0.65, 3.04], look: [0.0, 0.64, 2.18] },
-    { at: 0.85, pos: [0.0, 0.86, 4.58], look: [0.0, 0.58, 0.40] },
+    { at: 0.06, pos: [0.0, 1.30, 4.85], look: [0.0, 0.56, -6.50] },
+    { at: 0.17, pos: [0.0, 0.96, 4.65], look: [0.0, 0.60, -1.50] },
+    { at: 0.28, pos: [0.0, 0.64, 4.25], look: [0.0, 0.64, 2.18] },
+    { at: 0.33, pos: [0.0, 0.64, 3.26], look: [0.0, 0.64, 2.18] },
+    { at: 0.38, pos: [0.0, 0.70, 3.06], look: [0.0, 0.64, 2.18] },
+    { at: 0.46, pos: [0.04, 0.72, 3.10], look: [0.0, 0.64, 2.18] },
+    { at: 0.58, pos: [0.16, 0.80, 3.44], look: [0.0, 0.64, 2.16] },
+    { at: 0.68, pos: [0.18, 0.82, 3.50], look: [0.0, 0.63, 2.16] },
+    { at: 0.76, pos: [-0.16, 0.80, 3.50], look: [0.0, 0.63, 2.16] },
+    { at: 0.86, pos: [0.0, 0.65, 3.06], look: [0.0, 0.64, 2.18] },
+    { at: 0.92, pos: [0.0, 0.86, 4.60], look: [0.0, 0.58, 0.40] },
     { at: 1.00, pos: [-1.80, 1.26, 4.45], look: [0.0, 0.50, -1.20] },
   ];
 
@@ -265,7 +262,7 @@ export function createCarScene(): CarSceneController {
     if (isMobile && aspect < 0.55) {
       const narrowPullback = 1.0 + (0.55 - aspect) * 0.65;
       const grillePassLock =
-        smoothstep(0.16, 0.20, clamped) * (1 - smoothstep(0.24, 0.28, clamped));
+        smoothstep(0.26, 0.30, clamped) * (1 - smoothstep(0.35, 0.39, clamped));
       const effectivePull = THREE.MathUtils.lerp(narrowPullback, 1.0, grillePassLock);
       const offset = basePos.clone().sub(baseLook).multiplyScalar(effectivePull);
       basePos.copy(baseLook).add(offset);
@@ -276,20 +273,20 @@ export function createCarScene(): CarSceneController {
 
   /**
    * Smoothly updates the intentional background color, fog, and black road visibility:
-   * - 0.005 -> 0.035: Dark Studio (#08090c) rapidly transitions to Pure White Road Scene (#f4f5f7)
-   * - 0.035 -> 0.19: White scene with minimalist black perspective road
-   * - 0.19 -> 0.265: As camera flies through radiator grille, scene transitions to Dark Engine Bay (#07090e)
-   * - 0.265 -> 0.78: Dark Engine Bay for high-contrast mechanical disassembly & reassembly
-   * - 0.78 -> 0.85: Camera exits back through grille onto the road
-   * - 0.89 -> 0.97: Smooth return to Dark Studio (#08090c) before regular website sections
+   * - 0.015 -> 0.065: Dark Studio (#08090c) smoothly transitions to Pure White Road Scene (#f4f5f7)
+   * - 0.065 -> 0.28: White scene with minimalist black perspective road
+   * - 0.28 -> 0.365: As camera passes through the radiator grille, scene transitions to Dark Engine Bay (#07090e)
+   * - 0.365 -> 0.86: Dark Engine Bay for high-contrast mechanical vibration, disassembly & suspension in air
+   * - 0.86 -> 0.92: Camera exits back through grille onto the road
+   * - 0.92 -> 1.00: Smooth return to Dark Studio (#08090c) before regular website sections
    */
   const updateEnvironmentAndRoad = (p: number) => {
     if (!scene || !roadMat || !roadMesh || !shadowMat) return;
 
-    const toWhiteRoad = smoothstep(0.005, 0.035, p);
-    const toEngineBay = smoothstep(0.185, 0.26, p);
-    const exitToRoad = smoothstep(0.78, 0.85, p);
-    const backToDarkStudio = smoothstep(0.89, 0.97, p);
+    const toWhiteRoad = smoothstep(0.015, 0.065, p);
+    const toEngineBay = smoothstep(0.28, 0.365, p);
+    const exitToRoad = smoothstep(0.86, 0.915, p);
+    const backToDarkStudio = smoothstep(0.93, 0.99, p);
 
     // Compute current background color without any sudden flashes
     workingBgColor.copy(darkStudioColor);
@@ -304,10 +301,10 @@ export function createCarScene(): CarSceneController {
     }
 
     // Road visibility: emerges with the white scene, hides while inside the engine bay, reappears on exit
-    const roadAppear = smoothstep(0.005, 0.035, p);
-    const roadHideInBay = 1 - smoothstep(0.19, 0.255, p);
-    const roadReappearOut = smoothstep(0.785, 0.85, p);
-    const roadFadeEnd = 1 - smoothstep(0.90, 0.975, p);
+    const roadAppear = smoothstep(0.015, 0.065, p);
+    const roadHideInBay = 1 - smoothstep(0.29, 0.36, p);
+    const roadReappearOut = smoothstep(0.865, 0.915, p);
+    const roadFadeEnd = 1 - smoothstep(0.935, 0.99, p);
 
     const roadAlpha = Math.max(
       roadAppear * roadHideInBay,
@@ -492,12 +489,12 @@ export function createCarScene(): CarSceneController {
 
         const pose = sampleChoreography(scrollProgress);
 
-        // Subtle desktop mouse parallax ONLY in the initial studio stance (p < 0.015)
+        // Subtle desktop mouse parallax ONLY in the initial studio stance (p < 0.03)
         // so road perspective and radiator grille entry stay 100% locked on axis.
-        const allowParallax = !reducedMotion && !isMobile && scrollProgress < 0.015;
-        const parallaxWeight = allowParallax ? 0.12 * (1 - scrollProgress / 0.015) : 0;
+        const allowParallax = !reducedMotion && !isMobile && scrollProgress < 0.03;
+        const parallaxWeight = allowParallax ? 0.12 * (1 - scrollProgress / 0.03) : 0;
 
-        smoothedPointer.lerp(pointerNorm, Math.min(1, delta * 6.0));
+        smoothedPointer.lerp(pointerNorm, Math.min(1, delta * 5.0));
 
         targetCamPos.set(
           pose.pos.x + smoothedPointer.x * parallaxWeight,
@@ -510,7 +507,7 @@ export function createCarScene(): CarSceneController {
           currentCamPos.copy(targetCamPos);
           currentLookAt.copy(targetLookAt);
         } else {
-          const damp = Math.min(1, delta * 15.0);
+          const damp = Math.min(1, delta * 8.0);
           currentCamPos.lerp(targetCamPos, damp);
           currentLookAt.lerp(targetLookAt, damp);
         }

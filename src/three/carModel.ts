@@ -537,18 +537,14 @@ export async function loadChallengerModel(
     const p = Math.max(0, Math.min(1, progress));
 
     // ==========================================================================
-    // PRIORITY 2 & 6: FAST, ENERGETIC FORWARD MOTION ALONG ROAD & WHEEL ROTATION
+    // PRIORITY 2 & 6: SMOOTH PHYSICAL FORWARD MOTION ALONG ROAD & WHEEL ROTATION
     // ==========================================================================
     // - At p = 0.00 (Dark Studio Prologue), car starts at Z = -5.80m.
-    // - Immediately on scroll (p = 0.005 -> 0.19 desktop / 0.17 mobile), car surges
-    //   forward (+Z) along the black road to Z = +1.00m (6.80m travel, X = 0.0)
-    //   using an energetic ease-out curve with zero slow ramp-up.
-    // - From p = 0.85 -> 0.98 (Final Return), car settles back to Z = -1.20m.
-    const driveEnd = isMobile ? 0.17 : 0.19;
-    const tDrive = Math.max(0, Math.min(1, (p - 0.005) / (driveEnd - 0.005)));
-    const driveEase = 1 - Math.pow(1 - tDrive, 1.65);
-    const driveForward = driveEase * 6.80;
-    const returnSettle = smoothstep(0.85, 0.98, p) * 2.20;
+    // - From p = 0.04 -> 0.28 (Road Drive), car smoothly and steadily drives forward (+Z)
+    //   along the black road to Z = +1.00m (total 6.80m forward travel, X strictly 0.0).
+    // - From p = 0.88 -> 1.00 (Final Return), car settles back to Z = -1.20m.
+    const driveForward = smoothstep(0.04, 0.28, p) * 6.80;
+    const returnSettle = smoothstep(0.88, 1.00, p) * 2.20;
 
     const netDisplacement = driveForward - returnSettle;
     const carZ = -5.80 + netDisplacement;
@@ -558,9 +554,9 @@ export async function loadChallengerModel(
     const wheelRadius = 0.387;
     const wheelSpinAngle = netDisplacement / wheelRadius;
 
-    // Straighten front wheels immediately as the car launches (p: 0.005 -> 0.045)
+    // Straighten front wheels smoothly along the road as the car begins rolling (p: 0.01 -> 0.07)
     const steerStraightFactor =
-      smoothstep(0.005, 0.045, p) * (1 - smoothstep(0.90, 0.97, p));
+      smoothstep(0.01, 0.07, p) * (1 - smoothstep(0.92, 0.99, p));
 
     for (let i = 0; i < wheelRigs.length; i++) {
       const rig = wheelRigs[i];
@@ -575,19 +571,13 @@ export async function loadChallengerModel(
     }
 
     // ==========================================================================
-    // PRIORITY 3: RAPID GRILLE PASSAGE & EXTERIOR SHELL TRANSITION
+    // PRIORITY 3: GRILLE PASSAGE & EXTERIOR SHELL TRANSITION
     // ==========================================================================
-    // As camera rapidly flies through the front radiator grille (0.19 -> 0.28 desktop,
-    // 0.17 -> 0.26 mobile), open the front grille mesh and hide the outer car shell
-    // once inside so the camera never clips solid body polygons.
-    const grilleOpenStart = isMobile ? 0.165 : 0.185;
-    const grilleOpenEnd = isMobile ? 0.225 : 0.245;
-    const grilleCloseStart = isMobile ? 0.765 : 0.785;
-    const grilleCloseEnd = isMobile ? 0.825 : 0.845;
-
+    // As camera approaches and passes through the front radiator grille (0.28 -> 0.38),
+    // open the front grille mesh and hide the outer car shell once inside (0.365 -> 0.865)
+    // so the camera never intersects solid body polygons during the engine disassembly.
     const grilleOpenFactor =
-      smoothstep(grilleOpenStart, grilleOpenEnd, p) *
-      (1 - smoothstep(grilleCloseStart, grilleCloseEnd, p));
+      smoothstep(0.27, 0.34, p) * (1 - smoothstep(0.85, 0.90, p));
 
     grillMaterials.forEach((gMat) => {
       if (grilleOpenFactor > 0.01) {
@@ -601,10 +591,8 @@ export async function loadChallengerModel(
       }
     });
 
-    // Hide solid exterior car shell while camera is inside the engine bay
-    const bayEnter = isMobile ? 0.245 : 0.265;
-    const bayExit = isMobile ? 0.785 : 0.805;
-    const insideEngineBay = p >= bayEnter && p <= bayExit;
+    // Hide solid exterior car shell while camera is inside the engine bay (0.365 <= p <= 0.865)
+    const insideEngineBay = p >= 0.365 && p <= 0.865;
     for (let i = 0; i < exteriorShellMeshes.length; i++) {
       exteriorShellMeshes[i].visible = !insideEngineBay;
     }
@@ -614,7 +602,7 @@ export async function loadChallengerModel(
 
     // Dynamic Headlight Intensity
     const frontOpticsBoost =
-      p > 0.01 && p < 0.26 ? 1.55 : 1.0 + Math.sin(elapsedTime * 1.8) * 0.05;
+      p > 0.04 && p < 0.36 ? 1.5 : 1.0 + Math.sin(elapsedTime * 1.8) * 0.05;
     haloOuterMat.emissiveIntensity = 3.4 * frontOpticsBoost;
     haloInnerMat.emissiveIntensity = 3.0 * frontOpticsBoost;
     tailLightMat.emissiveIntensity = 2.8;
